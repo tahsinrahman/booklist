@@ -1,1 +1,1 @@
-This brance contains codes from https://tour.golang.org/methods/9
+This brance contains codes from https://tour.golang.org
