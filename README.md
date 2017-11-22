@@ -1,11 +1,8 @@
-intern project at appscode
+# intern project at appscode
 
-Booklist
+**Booklist**
 
 Features:
-
-    - Add books to the API
-
-    - List current books
-
-    - Update a book info
+- Add books to the API
+- List current books
+- Update a book info
