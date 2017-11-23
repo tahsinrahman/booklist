@@ -129,7 +129,7 @@ func updateNameHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Println("starting server...")
+	fmt.Println("starting server on port 8080... ")
 
 	http.HandleFunc("/", handler)
 	http.HandleFunc("/add/", addHandler)
