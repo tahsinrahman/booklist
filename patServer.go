@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,10 +13,42 @@ import (
 var mu sync.Mutex
 var storage = make(map[string][]string)
 
+type Book struct {
+	Name string
+	Auth string
+}
+
+func getNames(r *http.Request) (string, string) {
+	method := r.Method
+	fmt.Println(method)
+
+	var a, b string
+
+	if method == "GET" {
+		a = r.URL.Query().Get(":name")
+		b = r.URL.Query().Get(":auth")
+	} else {
+		decoder := json.NewDecoder(r.Body)
+		defer r.Body.Close()
+		var book Book
+		err := decoder.Decode(&book)
+
+		fmt.Println(book)
+
+		if err != nil {
+			fmt.Println(err)
+			return "", ""
+		}
+		a, b = book.Name, book.Auth
+	}
+	return a, b
+}
+
 //add books via get
 func addHandler(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get(":name")
-	author := r.URL.Query().Get(":auth")
+	name, author := getNames(r)
+
+	fmt.Println(name, author)
 
 	mu.Lock()
 	storage[author] = append(storage[author], name)
@@ -43,8 +76,7 @@ func searchBook(name, auth string) (int, bool) {
 
 //remove books
 func removeHandler(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get(":name")
-	author := r.URL.Query().Get(":auth")
+	name, author := getNames(r)
 
 	//first search, if found, then remove
 	i, ok := searchBook(name, author)
@@ -65,22 +97,22 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 
 //update author name
 func updateAuthHandler(w http.ResponseWriter, r *http.Request) {
-	prev := r.URL.Query().Get(":prev")
-	new := r.URL.Query().Get(":new")
-
-	fmt.Fprintln(w, storage)
+	prev, new := getNames(r)
+	fmt.Println(1, prev, new)
 
 	mu.Lock()
-	storage[new] = storage[prev]
+	storage[new] = append(storage[new], storage[prev]...)
 	delete(storage, prev)
 	mu.Unlock()
+
+	fmt.Println(storage)
+
 	fmt.Fprintln(w, "updated successfully")
 }
 
 //update book name
 func updateNameHandler(w http.ResponseWriter, r *http.Request) {
-	prev := r.URL.Query().Get(":prev")
-	new := r.URL.Query().Get(":new")
+	prev, new := getNames(r)
 
 	for auth, _ := range storage {
 		i, ok := searchBook(prev, auth)
@@ -101,9 +133,16 @@ func main() {
 	m.Get("/add/:name/:auth", http.HandlerFunc(addHandler))
 	m.Get("/list/", http.HandlerFunc(listHandler))
 	m.Get("/remove/:name/:auth", http.HandlerFunc(removeHandler))
-	m.Get("/updateName/:prev/:new", http.HandlerFunc(updateNameHandler))
-	m.Get("/updateAuth/:prev/:new", http.HandlerFunc(updateAuthHandler))
-	m.Get("/updateAuth/:prev/:new", http.HandlerFunc(updateAuthHandler))
+	m.Get("/updateName/:name/:auth", http.HandlerFunc(updateNameHandler))
+	m.Get("/updateAuth/:name/:auth", http.HandlerFunc(updateAuthHandler))
+	m.Get("/updateAuth/:name/:auth", http.HandlerFunc(updateAuthHandler))
+
+	m.Post("/add/", http.HandlerFunc(addHandler))
+	m.Post("/list/", http.HandlerFunc(listHandler))
+	m.Post("/remove/", http.HandlerFunc(removeHandler))
+	m.Post("/updateName/", http.HandlerFunc(updateNameHandler))
+	m.Post("/updateAuth/", http.HandlerFunc(updateAuthHandler))
+	m.Post("/updateAuth/", http.HandlerFunc(updateAuthHandler))
 
 	// Register this pat with the default serve mux so that other packages
 	// may also be exported. (i.e. /debug/pprof/*)
