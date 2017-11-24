@@ -115,7 +115,7 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	storage[id] = Book{book.Auth, book.Name, id}
-	commonResponse(w, true, "updated book successfully", storage[id])
+	commonResponse(w, true, "updated book successfully", []Book{storage[id]})
 }
 
 func commonResponse(w http.ResponseWriter, status bool, m string, list []Book) {
