@@ -33,7 +33,7 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	book := getBook(r)
 
 	if book == nil {
-		commonResponse(w, false, "invalid information", []Book{})
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
@@ -45,7 +45,7 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 
 	storage[book.Id] = *book
 
-	commonResponse(w, true, "book added successfully", []Book{*book})
+	commonResponse(w, true, "book added successfully", []Book{*book}, 201)
 }
 
 //list books via get
@@ -59,7 +59,15 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		listBooks = append(listBooks, books)
 	}
 
-	commonResponse(w, true, "showing all books", listBooks)
+	var code int
+
+	if len(listBooks) == 0 {
+		code = 400
+	} else {
+		code = 200
+	}
+
+	commonResponse(w, true, "showing all books", listBooks, code)
 }
 
 //remove books via update
@@ -68,14 +76,14 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(s)
 
 	if err != nil {
-		commonResponse(w, false, "invalid information", []Book{})
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
 	book, ok := storage[id]
 
 	if ok == false {
-		commonResponse(w, false, "invalid information", []Book{})
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
@@ -83,7 +91,7 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	delete(storage, id)
-	commonResponse(w, true, "deleted book successfully", []Book{book})
+	commonResponse(w, true, "deleted book successfully", []Book{book}, 200)
 }
 
 //update book via put
@@ -92,7 +100,7 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(book)
 
 	if book == nil {
-		commonResponse(w, false, "invalid information", []Book{})
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
@@ -100,14 +108,14 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(s)
 
 	if err != nil {
-		commonResponse(w, false, "invalid information", []Book{})
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
 	_, ok := storage[id]
 
 	if ok == false {
-		commonResponse(w, false, "invalid information", []Book{})
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
@@ -115,15 +123,16 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	storage[id] = Book{book.Auth, book.Name, id}
-	commonResponse(w, true, "updated book successfully", []Book{storage[id]})
+	commonResponse(w, true, "updated book successfully", []Book{storage[id]}, 200)
 }
 
-func commonResponse(w http.ResponseWriter, status bool, m string, list []Book) {
+func commonResponse(w http.ResponseWriter, status bool, m string, list []Book, statusCode int) {
 	resp := JsonResponse{
 		Success:  status,
 		Message:  m,
 		BookList: list,
 	}
+	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(resp)
 }
 
