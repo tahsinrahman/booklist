@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -59,15 +58,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		listBooks = append(listBooks, books)
 	}
 
-	var code int
-
-	if len(listBooks) == 0 {
-		code = 400
-	} else {
-		code = 200
-	}
-
-	commonResponse(w, true, "showing all books", listBooks, code)
+	commonResponse(w, true, "showing all books", listBooks, 200)
 }
 
 //remove books via update
@@ -97,7 +88,6 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 //update book via put
 func updateHandler(w http.ResponseWriter, r *http.Request) {
 	book := getBook(r)
-	fmt.Println(book)
 
 	if book == nil {
 		commonResponse(w, false, "invalid information", []Book{}, 404)
