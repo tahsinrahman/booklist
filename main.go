@@ -23,20 +23,37 @@ type User struct {
 
 var userList = make(map[string]User)
 
-func checkAuth(r *http.Request) bool {
+func checkAuth(r *http.Request) *User {
 	username, pass, ok := r.BasicAuth()
-
-	if ok == false {
-		return false
-	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	if userList[username].Password == pass {
-		return true
+
+	if ok == false {
+		//check cookie now
+		//return nil
+
+		cookie, err := r.Cookie("login")
+
+		if err != nil {
+			return nil
+		}
+
+		user, ok := userList[cookie.Value]
+
+		if ok == false {
+			return nil
+		}
+
+		return &user
 	}
 
-	return false
+	if userList[username].Password == pass {
+		user := userList[username]
+		return &user
+	}
+
+	return nil
 }
 
 func getUser(r *http.Request) *User {
@@ -53,6 +70,12 @@ func getUser(r *http.Request) *User {
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request) {
+	//if already logged in, can't register until logged out
+	if user := checkAuth(r); user != nil {
+		authResponse(w, false, "already logged in", *user, 404)
+		return
+	}
+
 	user := getUser(r)
 	if user == nil {
 		authResponse(w, false, "invalid info", User{}, 404)
@@ -73,6 +96,12 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
+	//if already logged in, can't login until logged out
+	if user := checkAuth(r); user != nil {
+		authResponse(w, false, "already logged in", *user, 404)
+		return
+	}
+
 	user := getUser(r)
 
 	if user == nil {
@@ -90,7 +119,14 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user.Password == userList[user.UserName].Password {
+		//set cookie here
+		cookie := http.Cookie{Name: "login", Value: user.UserName, Path: "/"}
+		http.SetCookie(w, &cookie)
 		authResponse(w, true, "login successfull", *user, 200)
+
+		//after login, cookie is set with response
+		//the browser will save this cookie and send it with all next requests
+		//so, i need to check if next requests contains cookie or not
 	} else {
 		authResponse(w, false, "invalid pass", *user, 401)
 	}
@@ -124,9 +160,9 @@ var storage = make(map[int]Book)
 
 //add books via post
 func addHandler(w http.ResponseWriter, r *http.Request) {
-	ok := checkAuth(r)
+	user := checkAuth(r)
 
-	if ok == false {
+	if user == nil {
 		authResponse(w, false, "unauthorized", User{}, 401)
 		return
 	}
@@ -151,9 +187,9 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 
 //list books via get
 func listHandler(w http.ResponseWriter, r *http.Request) {
-	ok := checkAuth(r)
+	user := checkAuth(r)
 
-	if ok == false {
+	if user == nil {
 		authResponse(w, false, "unauthorized", User{}, 401)
 		return
 	}
@@ -172,9 +208,9 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 
 //remove books via update
 func removeHandler(w http.ResponseWriter, r *http.Request) {
-	ok := checkAuth(r)
+	user := checkAuth(r)
 
-	if ok == false {
+	if user == nil {
 		authResponse(w, false, "unauthorized", User{}, 401)
 		return
 	}
@@ -203,9 +239,9 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 
 //update book via put
 func updateHandler(w http.ResponseWriter, r *http.Request) {
-	ok := checkAuth(r)
+	user := checkAuth(r)
 
-	if ok == false {
+	if user == nil {
 		authResponse(w, false, "unauthorized", User{}, 401)
 		return
 	}
@@ -271,6 +307,8 @@ func getBook(r *http.Request) *Book {
 //we are working on server side, we've to deal with response, not with the request
 //only checking if the request has correct Authorization header or not
 
+//each request will come with cookie in
+
 func main() {
 	m := pat.New()
 	m.Get("/book/", http.HandlerFunc(listHandler))
@@ -280,6 +318,9 @@ func main() {
 
 	m.Post("/register/", http.HandlerFunc(registerHandler))
 	m.Post("/login/", http.HandlerFunc(loginHandler))
+
+	//need to add logout handler for loging out and resetting cookie
+	//set cookie when logged in
 
 	http.Handle("/", m)
 	err := http.ListenAndServe(":12345", nil)
