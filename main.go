@@ -307,7 +307,7 @@ func getBook(r *http.Request) *Book {
 //we are working on server side, we've to deal with response, not with the request
 //only checking if the request has correct Authorization header or not
 
-//each request will come with cookie in
+//each request will come with cookie
 
 func main() {
 	m := pat.New()
