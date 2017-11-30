@@ -1,4 +1,4 @@
-FROM ubuntu
-ADD server server
+FROM busybox:glibc
 EXPOSE 12345
-CMD ["./server"]
+ADD server /bin/booklist
+CMD ["booklist"]
