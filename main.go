@@ -23,6 +23,7 @@ type User struct {
 
 var userList = make(map[string]User)
 
+//get user from basic auth header or cookie
 func checkAuth(r *http.Request) *User {
 	username, pass, ok := r.BasicAuth()
 
@@ -32,7 +33,6 @@ func checkAuth(r *http.Request) *User {
 	if ok == false {
 		//check cookie now
 		//return nil
-
 		cookie, err := r.Cookie("login")
 
 		if err != nil {
@@ -56,6 +56,7 @@ func checkAuth(r *http.Request) *User {
 	return nil
 }
 
+//get user from json data
 func getUser(r *http.Request) *User {
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
@@ -69,16 +70,17 @@ func getUser(r *http.Request) *User {
 	return &user
 }
 
-func registerHandler(w http.ResponseWriter, r *http.Request) {
+//register POST method
+func checkRegisterHandler(w http.ResponseWriter, r *http.Request) {
 	//if already logged in, can't register until logged out
 	if user := checkAuth(r); user != nil {
-		authResponse(w, false, "already logged in", *user, 404)
+		authResponse(w, false, "already logged in", *user, 403)
 		return
 	}
 
 	user := getUser(r)
 	if user == nil {
-		authResponse(w, false, "invalid info", User{}, 404)
+		authResponse(w, false, "invalid info", User{}, 400)
 		return
 	}
 	mu.Lock()
@@ -95,18 +97,29 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	userList[user.UserName] = *user
 }
 
-func loginHandler(w http.ResponseWriter, r *http.Request) {
-	//if already logged in, can't login until logged out
+//register GET method
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+	//if already logged in, can't register until logged out
 	if user := checkAuth(r); user != nil {
-		authResponse(w, false, "already logged in", *user, 404)
+		authResponse(w, false, "already logged in", *user, 403)
 		return
 	}
 
-	//update error, don't user json
+	authResponse(w, true, "provide name, username and password now", User{}, 200)
+}
+
+//login POST method
+func checkLoginHandler(w http.ResponseWriter, r *http.Request) {
+	//if already logged in, can't login until logged out
+	if user := checkAuth(r); user != nil {
+		authResponse(w, false, "already logged in", *user, 403)
+		return
+	}
+
 	user := getUser(r)
 
 	if user == nil {
-		authResponse(w, false, "invalid user", User{}, 404)
+		authResponse(w, false, "invalid user", User{}, 400)
 		return
 	}
 
@@ -115,7 +128,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, ok := userList[user.UserName]
 	if ok == false {
-		authResponse(w, false, "username doesn't exist", User{}, 404)
+		authResponse(w, false, "username doesn't exist", User{}, 400)
 		return
 	}
 
@@ -131,6 +144,28 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		authResponse(w, false, "invalid pass", *user, 401)
 	}
+}
+
+//login GET method
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	//if already logged in, can't login until logged out
+	if user := checkAuth(r); user != nil {
+		authResponse(w, false, "already logged in", *user, 403)
+		return
+	}
+	authResponse(w, true, "provide username and password now", User{}, 200)
+}
+
+//logout
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	//if not logged in, can't logout until logged in
+	user := checkAuth(r)
+	if user == nil {
+		authResponse(w, false, "not logged in", User{}, 403)
+		return
+	}
+
+	authResponse(w, true, "successfully logged out", *user, 200)
 }
 
 type AuthJson struct {
@@ -171,7 +206,7 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	book := getBook(r)
 
 	if book == nil {
-		commonResponse(w, false, "invalid information", []Book{}, 404)
+		commonResponse(w, false, "invalid information", []Book{}, 400)
 		return
 	}
 
@@ -220,7 +255,7 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(s)
 
 	if err != nil {
-		commonResponse(w, false, "invalid information", []Book{}, 404)
+		commonResponse(w, false, "invalid link", []Book{}, 400)
 		return
 	}
 
@@ -247,17 +282,17 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	book := getBook(r)
-
-	if book == nil {
-		commonResponse(w, false, "invalid information", []Book{}, 404)
-		return
-	}
-
 	s := r.URL.Query().Get(":id")
 	id, err := strconv.Atoi(s)
 
 	if err != nil {
+		commonResponse(w, false, "invalid link", []Book{}, 400)
+		return
+	}
+
+	book := getBook(r)
+
+	if book == nil {
 		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
@@ -312,16 +347,23 @@ func getBook(r *http.Request) *Book {
 
 func main() {
 	m := pat.New()
+
 	m.Get("/book/", http.HandlerFunc(listHandler))
 	m.Post("/book/", http.HandlerFunc(addHandler))
 	m.Del("/book/:id", http.HandlerFunc(removeHandler))
 	m.Put("/book/:id", http.HandlerFunc(updateHandler))
 
-	m.Post("/register/", http.HandlerFunc(registerHandler))
-	m.Post("/login/", http.HandlerFunc(loginHandler))
+	//when a user cliks on login in get method server checks if he is logged in or not
+	//if not logged in, the client then sends username and pass in post method, then server checks credentials
+	m.Get("/login/", http.HandlerFunc(loginHandler))
+	m.Post("/login/", http.HandlerFunc(checkLoginHandler))
 
-	//need to add logout handler for loging out and resetting cookie
-	//set cookie when logged in
+	//when user clicks registration link in get method then he get to the page to fill the reg form
+	//after filling the form, the form data will be sent to server using post method
+	m.Get("/register/", http.HandlerFunc(registerHandler))
+	m.Post("/register/", http.HandlerFunc(checkRegisterHandler))
+
+	m.Get("/logout/", http.HandlerFunc(logoutHandler))
 
 	http.Handle("/", m)
 	err := http.ListenAndServe(":12345", nil)
@@ -329,3 +371,5 @@ func main() {
 		log.Fatal("ListenAndServe: ", err)
 	}
 }
+
+//next : json marshal/unmarshal
