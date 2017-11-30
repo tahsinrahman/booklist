@@ -1,141 +1,331 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
+	"log"
 	"net/http"
-	"strings"
+	"strconv"
+	"sync"
+
+	"github.com/bmizerany/pat"
 )
 
-//same author can have multiple books, so using slice
-var storage = make(map[string][]string)
+var mu sync.Mutex
+var counter int
 
-/*
-//book info
+/*****************working with authorization***************/
+
+type User struct {
+	Name     string `json:"name"`
+	UserName string `json:"username"`
+	Password string `json:"password"`
+}
+
+var userList = make(map[string]User)
+
+func checkAuth(r *http.Request) *User {
+	username, pass, ok := r.BasicAuth()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if ok == false {
+		//check cookie now
+		//return nil
+
+		cookie, err := r.Cookie("login")
+
+		if err != nil {
+			return nil
+		}
+
+		user, ok := userList[cookie.Value]
+
+		if ok == false {
+			return nil
+		}
+
+		return &user
+	}
+
+	if userList[username].Password == pass {
+		user := userList[username]
+		return &user
+	}
+
+	return nil
+}
+
+func getUser(r *http.Request) *User {
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+	var user User
+	err := decoder.Decode(&user)
+
+	if err != nil || user.UserName == "" || user.Password == "" {
+		return nil
+	}
+
+	return &user
+}
+
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+	//if already logged in, can't register until logged out
+	if user := checkAuth(r); user != nil {
+		authResponse(w, false, "already logged in", *user, 404)
+		return
+	}
+
+	user := getUser(r)
+	if user == nil {
+		authResponse(w, false, "invalid info", User{}, 404)
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+
+	_, ok := userList[user.UserName]
+	if ok == true {
+		authResponse(w, false, "username exists", User{}, 404)
+		return
+	}
+
+	authResponse(w, true, "registration successfull", *user, 200)
+
+	userList[user.UserName] = *user
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	//if already logged in, can't login until logged out
+	if user := checkAuth(r); user != nil {
+		authResponse(w, false, "already logged in", *user, 404)
+		return
+	}
+
+	//update error, don't user json
+	user := getUser(r)
+
+	if user == nil {
+		authResponse(w, false, "invalid user", User{}, 404)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	_, ok := userList[user.UserName]
+	if ok == false {
+		authResponse(w, false, "username doesn't exist", User{}, 404)
+		return
+	}
+
+	if user.Password == userList[user.UserName].Password {
+		//set cookie here
+		cookie := http.Cookie{Name: "login", Value: user.UserName, Path: "/"}
+		http.SetCookie(w, &cookie)
+		authResponse(w, true, "login successfull", *user, 200)
+
+		//after login, cookie is set with response
+		//the browser will save this cookie and send it with all next requests
+		//so, i need to check if next requests contains cookie or not
+	} else {
+		authResponse(w, false, "invalid pass", *user, 401)
+	}
+}
+
+type AuthJson struct {
+	Success bool
+	Message string
+	UserObj User
+}
+
+func authResponse(w http.ResponseWriter, status bool, m string, user User, statusCode int) {
+	resp := AuthJson{
+		Success: status,
+		Message: m,
+		UserObj: user,
+	}
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(resp)
+}
+
+/*****************working with book***************/
+
 type Book struct {
-	Name, Author string
-}
-*/
-
-//default handler
-func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "visit localhost:8080/add/Name/Author to add book")
-	fmt.Fprintln(w, "visit localhost:8080/remove/Name/Author to remove book")
-	fmt.Fprintln(w, "visit localhost:8080/search/Name/Author to search book")
-	fmt.Fprintln(w, "visit localhost:8080/list to list books")
+	Name string
+	Auth string
+	Id   int
 }
 
-//list books
-func listHandler(w http.ResponseWriter, r *http.Request) {
-	for name, author := range storage {
-		fmt.Fprintln(w, name, author)
-	}
-}
+var storage = make(map[int]Book)
 
-func parseNameAuth(r *http.Request, title string) (string, string, bool) {
-	bookInfo := strings.Split(r.URL.Path[len(title)+2:], "/")
-
-	if len(bookInfo) != 2 {
-		return "", "", false
-	}
-	name, author := bookInfo[0], bookInfo[1]
-	return name, author, true
-}
-
-//add books via get
+//add books via post
 func addHandler(w http.ResponseWriter, r *http.Request) {
-	name, author, ok := parseNameAuth(r, "add")
+	user := checkAuth(r)
 
-	if ok == false {
-		//do some work
+	if user == nil {
+		authResponse(w, false, "unauthorized", User{}, 401)
 		return
 	}
 
-	storage[author] = append(storage[author], name)
+	book := getBook(r)
 
-	fmt.Fprintln(w, "book added successfully!")
-}
-
-func searchBook(name, auth string) (int, bool) {
-	for i, x := range storage[auth] {
-		if x == name {
-			return i, true
-		}
+	if book == nil {
+		commonResponse(w, false, "invalid information", []Book{}, 404)
+		return
 	}
-	return 0, false
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	counter++
+	book.Id = counter
+
+	storage[book.Id] = *book
+
+	commonResponse(w, true, "book added successfully", []Book{*book}, 201)
 }
 
-//remove books
+//list books via get
+func listHandler(w http.ResponseWriter, r *http.Request) {
+	user := checkAuth(r)
+
+	if user == nil {
+		authResponse(w, false, "unauthorized", User{}, 401)
+		return
+	}
+
+	var listBooks []Book
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for _, books := range storage {
+		listBooks = append(listBooks, books)
+	}
+
+	commonResponse(w, true, "showing all books", listBooks, 200)
+}
+
+//remove books via update
 func removeHandler(w http.ResponseWriter, r *http.Request) {
-	name, author, ok := parseNameAuth(r, "remove")
+	user := checkAuth(r)
 
-	if ok == false {
-		//do some work
+	if user == nil {
+		authResponse(w, false, "unauthorized", User{}, 401)
 		return
 	}
 
-	//first search, if found, then remove
-	i, ok := searchBook(name, author)
+	s := r.URL.Query().Get(":id")
+	id, err := strconv.Atoi(s)
 
-	if ok == false {
-		//do something
-		//fmt.Fprint(w, "not found")
+	if err != nil {
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
-	//fmt.Fprintln(w, storage[author])
-	storage[author] = append(storage[author][:i], storage[author][i+1:]...)
-	fmt.Fprintln(w, "removed successfully")
-	//fmt.Fprintln(w, storage[author])
+	book, ok := storage[id]
+
+	if ok == false {
+		commonResponse(w, false, "invalid information", []Book{}, 404)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	delete(storage, id)
+	commonResponse(w, true, "deleted book successfully", []Book{book}, 200)
 }
 
-//update author name
-func updateAuthHandler(w http.ResponseWriter, r *http.Request) {
-	prevAuth, newAuth, ok := parseNameAuth(r, "updateAuth")
+//update book via put
+func updateHandler(w http.ResponseWriter, r *http.Request) {
+	user := checkAuth(r)
 
-	if ok == false {
-		//do some work
-		fmt.Fprintln(w, "not found")
+	if user == nil {
+		authResponse(w, false, "unauthorized", User{}, 401)
 		return
 	}
 
-	fmt.Fprintln(w, storage)
+	book := getBook(r)
 
-	storage[newAuth] = storage[prevAuth]
-	fmt.Fprintln(w, storage)
-	delete(storage, prevAuth)
-	fmt.Fprintln(w, storage)
-	fmt.Fprintln(w, "updated successfully")
-}
-
-//update book name
-func updateNameHandler(w http.ResponseWriter, r *http.Request) {
-	prevName, newName, ok := parseNameAuth(r, "updateName")
-
-	if ok == false {
-		//do some work
+	if book == nil {
+		commonResponse(w, false, "invalid information", []Book{}, 404)
 		return
 	}
 
-	for auth, _ := range storage {
-		i, ok := searchBook(prevName, auth)
-		if ok == true {
-			storage[auth][i] = newName
-			fmt.Fprintln(w, "updated successfully")
-			return
-		}
+	s := r.URL.Query().Get(":id")
+	id, err := strconv.Atoi(s)
+
+	if err != nil {
+		commonResponse(w, false, "invalid information", []Book{}, 404)
+		return
 	}
 
-	//not found, do something
+	_, okay := storage[id]
+
+	if okay == false {
+		commonResponse(w, false, "invalid information", []Book{}, 404)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	storage[id] = Book{book.Auth, book.Name, id}
+	commonResponse(w, true, "updated book successfully", []Book{storage[id]}, 200)
 }
+
+type JsonResponse struct {
+	Success  bool
+	Message  string
+	BookList []Book
+}
+
+func commonResponse(w http.ResponseWriter, status bool, m string, list []Book, statusCode int) {
+	resp := JsonResponse{
+		Success:  status,
+		Message:  m,
+		BookList: list,
+	}
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func getBook(r *http.Request) *Book {
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+	var book Book
+	err := decoder.Decode(&book)
+
+	if err != nil {
+		return nil
+	}
+	return &book
+}
+
+//the client has to send the Authorization header along with every request it makes
+//we are working on server side, we've to deal with response, not with the request
+//only checking if the request has correct Authorization header or not
+
+//each request will come with cookie
 
 func main() {
-	fmt.Println("starting server on port 8080... ")
+	m := pat.New()
+	m.Get("/book/", http.HandlerFunc(listHandler))
+	m.Post("/book/", http.HandlerFunc(addHandler))
+	m.Del("/book/:id", http.HandlerFunc(removeHandler))
+	m.Put("/book/:id", http.HandlerFunc(updateHandler))
 
-	http.HandleFunc("/", handler)
-	http.HandleFunc("/add/", addHandler)
-	http.HandleFunc("/list/", listHandler)
-	http.HandleFunc("/remove/", removeHandler)
-	http.HandleFunc("/updateName/", updateNameHandler)
-	http.HandleFunc("/updateAuth/", updateAuthHandler)
-	http.ListenAndServe(":8080", nil)
+	m.Post("/register/", http.HandlerFunc(registerHandler))
+	m.Post("/login/", http.HandlerFunc(loginHandler))
+
+	//need to add logout handler for loging out and resetting cookie
+	//set cookie when logged in
+
+	http.Handle("/", m)
+	err := http.ListenAndServe(":12345", nil)
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
 }

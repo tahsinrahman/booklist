@@ -1,0 +1,3 @@
+package: github.com/tahsinrahman/booklist
+import:
+- package: github.com/bmizerany/pat

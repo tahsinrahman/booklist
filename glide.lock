@@ -1,0 +1,6 @@
+hash: 76f072ecc917adef6a23e117904ab1a6a4ac852c2e15415f48aa9a4e6ebe6995
+updated: 2017-11-27T23:36:50.164135049+06:00
+imports:
+- name: github.com/bmizerany/pat
+  version: 6226ea591a40176dd3ff9cd8eff81ed6ca721a00
+testImports: []

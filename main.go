@@ -102,6 +102,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//update error, don't user json
 	user := getUser(r)
 
 	if user == nil {
