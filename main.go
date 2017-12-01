@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -74,13 +75,13 @@ func getUser(r *http.Request) *User {
 func checkRegisterHandler(w http.ResponseWriter, r *http.Request) {
 	//if already logged in, can't register until logged out
 	if user := checkAuth(r); user != nil {
-		authResponse(w, false, "already logged in", *user, 403)
+		http.Redirect(w, r, r.URL.Host+"/", 301)
 		return
 	}
 
 	user := getUser(r)
 	if user == nil {
-		authResponse(w, false, "invalid info", User{}, 400)
+		authResponse(w, false, "invalid info", "", 400)
 		return
 	}
 	mu.Lock()
@@ -88,11 +89,11 @@ func checkRegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, ok := userList[user.UserName]
 	if ok == true {
-		authResponse(w, false, "username exists", User{}, 404)
+		authResponse(w, false, "username exists", user.UserName, 400)
 		return
 	}
 
-	authResponse(w, true, "registration successfull", *user, 200)
+	authResponse(w, true, "registration successfull", user.UserName, 200)
 
 	userList[user.UserName] = *user
 }
@@ -101,25 +102,25 @@ func checkRegisterHandler(w http.ResponseWriter, r *http.Request) {
 func registerHandler(w http.ResponseWriter, r *http.Request) {
 	//if already logged in, can't register until logged out
 	if user := checkAuth(r); user != nil {
-		authResponse(w, false, "already logged in", *user, 403)
+		http.Redirect(w, r, r.URL.Host+"/", 301)
 		return
 	}
 
-	authResponse(w, true, "provide name, username and password now", User{}, 200)
+	authResponse(w, true, "provide name, username and password now", "", 200)
 }
 
 //login POST method
 func checkLoginHandler(w http.ResponseWriter, r *http.Request) {
 	//if already logged in, can't login until logged out
 	if user := checkAuth(r); user != nil {
-		authResponse(w, false, "already logged in", *user, 403)
+		http.Redirect(w, r, r.URL.Host+"/", 301)
 		return
 	}
 
 	user := getUser(r)
 
 	if user == nil {
-		authResponse(w, false, "invalid user", User{}, 400)
+		authResponse(w, false, "invalid user", "", 400)
 		return
 	}
 
@@ -128,7 +129,7 @@ func checkLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, ok := userList[user.UserName]
 	if ok == false {
-		authResponse(w, false, "username doesn't exist", User{}, 400)
+		authResponse(w, false, "username doesn't exist", user.UserName, 400)
 		return
 	}
 
@@ -136,13 +137,13 @@ func checkLoginHandler(w http.ResponseWriter, r *http.Request) {
 		//set cookie here
 		cookie := http.Cookie{Name: "login", Value: user.UserName, Path: "/"}
 		http.SetCookie(w, &cookie)
-		authResponse(w, true, "login successfull", *user, 200)
+		authResponse(w, true, "login successfull", user.UserName, 200)
 
 		//after login, cookie is set with response
 		//the browser will save this cookie and send it with all next requests
 		//so, i need to check if next requests contains cookie or not
 	} else {
-		authResponse(w, false, "invalid pass", *user, 401)
+		authResponse(w, false, "invalid pass", user.UserName, 401)
 	}
 }
 
@@ -150,10 +151,10 @@ func checkLoginHandler(w http.ResponseWriter, r *http.Request) {
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	//if already logged in, can't login until logged out
 	if user := checkAuth(r); user != nil {
-		authResponse(w, false, "already logged in", *user, 403)
+		http.Redirect(w, r, r.URL.Host+"/", 301)
 		return
 	}
-	authResponse(w, true, "provide username and password now", User{}, 200)
+	authResponse(w, true, "provide username and password now", "", 200)
 }
 
 //logout
@@ -161,24 +162,24 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	//if not logged in, can't logout until logged in
 	user := checkAuth(r)
 	if user == nil {
-		authResponse(w, false, "not logged in", User{}, 403)
+		http.Redirect(w, r, r.URL.Host+"/", 301)
 		return
 	}
 
-	authResponse(w, true, "successfully logged out", *user, 200)
+	authResponse(w, true, "successfully logged out", user.UserName, 200)
 }
 
 type AuthJson struct {
-	Success bool
-	Message string
-	UserObj User
+	Success  bool
+	Message  string
+	Username string
 }
 
-func authResponse(w http.ResponseWriter, status bool, m string, user User, statusCode int) {
+func authResponse(w http.ResponseWriter, status bool, m string, user string, statusCode int) {
 	resp := AuthJson{
-		Success: status,
-		Message: m,
-		UserObj: user,
+		Success:  status,
+		Message:  m,
+		Username: user,
 	}
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(resp)
@@ -199,7 +200,7 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	user := checkAuth(r)
 
 	if user == nil {
-		authResponse(w, false, "unauthorized", User{}, 401)
+		authResponse(w, false, "unauthorized", "", 401)
 		return
 	}
 
@@ -226,7 +227,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	user := checkAuth(r)
 
 	if user == nil {
-		authResponse(w, false, "unauthorized", User{}, 401)
+		authResponse(w, false, "unauthorized", "", 401)
 		return
 	}
 
@@ -247,7 +248,7 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 	user := checkAuth(r)
 
 	if user == nil {
-		authResponse(w, false, "unauthorized", User{}, 401)
+		authResponse(w, false, "unauthorized", "", 401)
 		return
 	}
 
@@ -278,7 +279,7 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	user := checkAuth(r)
 
 	if user == nil {
-		authResponse(w, false, "unauthorized", User{}, 401)
+		authResponse(w, false, "unauthorized", "", 401)
 		return
 	}
 
@@ -339,6 +340,10 @@ func getBook(r *http.Request) *Book {
 	return &book
 }
 
+func homePage(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "welcome")
+}
+
 //the client has to send the Authorization header along with every request it makes
 //we are working on server side, we've to deal with response, not with the request
 //only checking if the request has correct Authorization header or not
@@ -347,6 +352,8 @@ func getBook(r *http.Request) *Book {
 
 func main() {
 	m := pat.New()
+
+	m.Get("/", http.HandlerFunc(homePage))
 
 	m.Get("/book/", http.HandlerFunc(listHandler))
 	m.Post("/book/", http.HandlerFunc(addHandler))
@@ -371,5 +378,3 @@ func main() {
 		log.Fatal("ListenAndServe: ", err)
 	}
 }
-
-//next : json marshal/unmarshal
