@@ -1,4 +1,4 @@
 FROM busybox:glibc
 EXPOSE 12345
-ADD server /bin/booklist
+ADD booklist /bin/booklist
 CMD ["booklist"]
