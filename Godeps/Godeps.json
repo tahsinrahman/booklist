@@ -1,0 +1,11 @@
+{
+	"ImportPath": "github.com/tahsinrahman/booklist",
+	"GoVersion": "go1.6",
+	"GodepVersion": "v79",
+	"Deps": [
+		{
+			"ImportPath": "github.com/bmizerany/pat",
+			"Rev": "6226ea591a40176dd3ff9cd8eff81ed6ca721a00"
+		}
+	]
+}
